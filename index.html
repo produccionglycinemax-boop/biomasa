@@ -144,6 +144,22 @@ table.t tfoot td { font-weight: 600; border-bottom: 0; }
 .notes p { margin: 0; max-width: 65ch; }
 .notes b { color: var(--ink); }
 [hidden] { display: none !important; }
+/* ---- desplegable de lotes ---- */
+details.dd { position: relative; z-index: 1500; }
+details.dd > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 600; font-size: .85rem; cursor: pointer; user-select: none; }
+details.dd > summary::-webkit-details-marker { display: none; }
+details.dd > summary::after { content: ""; border: 5px solid transparent; border-top-color: var(--ink-2); margin-top: 5px; }
+details.dd[open] > summary { border-color: var(--accent); }
+details.dd > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dd-menu { position: absolute; z-index: 2000; top: calc(100% + 6px); left: 0; min-width: 240px; max-height: 360px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.15); padding: 8px; display: grid; gap: 2px; }
+.dd-acc { display: flex; gap: 6px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.dd-acc button { font: inherit; font-size: .78rem; font-weight: 600; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+.dd-menu label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: .86rem; }
+.dd-menu label:hover { background: var(--surface-2); }
+.dd-menu label small { margin-left: auto; color: var(--ink-3); font-family: var(--font-data); font-size: .74rem; }
+.dd-menu input { accent-color: var(--accent); }
 /* ---- solapas ---- */
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
 .tabs button { font: inherit; font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; border: 0; background: transparent;
@@ -276,10 +292,14 @@ a.dl:hover { text-decoration: underline; }
   <div id="tab-presc" class="tabc" role="tabpanel" aria-labelledby="tabbtn-presc" hidden>
     <section class="kpis" id="p-kpis" aria-label="Resumen de prescripciones"></section>
     <div class="acciones">
+      <details class="dd" id="p-dd">
+        <summary>Lotes: <span id="p-dd-txt">todos</span></summary>
+        <div class="dd-menu" id="p-dd-menu"></div>
+      </details>
       <a class="btn" id="p-dl-todas" download>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>Todas las prescripciones (zip)</a>
       <button class="btn sec" id="p-csv">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>Toneladas por lote (csv)</button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>Toneladas de la selección (csv)</button>
       <span class="nota" id="p-fuente"></span>
     </div>
     <div class="row2">
@@ -716,13 +736,27 @@ function iniciarPresc() {
   const escala = { urea: [RG.min, RG.max, PR.paleta_urea, "kg urea/ha"], azufre: [sMin, sMax, PR.paleta_azufre, "kg/ha"] };
   const colP = (v, k) => v == null ? "transparent" : rampa(escala[k][2], (v - escala[k][0]) / (escala[k][1] - escala[k][0]));
 
-  $("p-kpis").innerHTML = [
-    ["Lotes a prescribir", fmt(PR.lotes.length), "", `${RG.excluidos.join(", ")} sin prescribir (maíz temprano)`, ""],
-    ["Superficie", fmt(T.ha), "ha", `${PR.ambientes.length} ambientes · ${RG.pixel.length} lotes por pixel`, ""],
-    ["Urea a pedir", fmt(T.urea_tn_pedir, 1), "t", `${fmt(T.urea_tn, 1)} t + ${fmt(100 * RG.superposicion)} % superposición · media ${fmt(T.urea_media)} kg/ha`, "key"],
-    ["Azufre a pedir", fmt(T.azufre_tn_pedir, 1), "t", `${fmt(T.azufre_tn, 1)} t + ${fmt(100 * RG.superposicion)} % · media ${fmt(T.azufre_media)} kg/ha`, "key"],
-    ["Urea en los límites", fmt(RG.n_min + RG.n_max), "amb.", `${fmt(RG.n_min)} al mínimo y ${fmt(RG.n_max)} al máximo de su ambiente (${LIM_TXT})`, ""],
-  ].map(([l, v, u, d, c]) => `<div class="kpi ${c}"><span class="eyebrow">${l}</span><span class="v">${v}<small>${u}</small></span><span class="d">${d}</span></div>`).join("");
+  // ---- selección de lotes (desplegable) ----
+  const sel = new Set(PR.lotes.map(l => l.Lote));
+  const elegidos = () => PR.lotes.filter(l => sel.has(l.Lote));
+  function totales(ls) {
+    const s = k => ls.reduce((a, l) => a + (l[k] || 0), 0);
+    const ha = s("ha");
+    return { n: ls.length, ha, amb: PR.ambientes.filter(a => ls.some(l => l.Lote === a.Lote)).length,
+      pix: ls.filter(l => l.tipo.startsWith("por pixel")).length,
+      urea_tn: s("urea_tn"), urea_tn_pedir: s("urea_tn_pedir"), urea_media: ha ? s("urea_tn") * 1000 / ha : null,
+      azufre_tn: s("azufre_tn"), azufre_tn_pedir: s("azufre_tn_pedir"), azufre_media: ha ? s("azufre_tn") * 1000 / ha : null };
+  }
+  function kpis() {
+    const X = totales(elegidos()), todos = X.n === PR.lotes.length;
+    $("p-kpis").innerHTML = [
+      ["Lotes a prescribir", fmt(X.n), todos ? "" : `de ${PR.lotes.length}`, todos ? `${RG.excluidos.join(", ")} sin prescribir (maíz temprano)` : elegidos().map(l => l.Lote).join(", ") || "ningún lote elegido", ""],
+      ["Superficie", fmt(X.ha), "ha", `${fmt(X.amb)} ambientes · ${fmt(X.pix)} lotes por pixel`, ""],
+      ["Urea a pedir", fmt(X.urea_tn_pedir, 1), "t", `${fmt(X.urea_tn, 1)} t + ${fmt(100 * RG.superposicion)} % superposición · media ${fmt(X.urea_media)} kg/ha`, "key"],
+      ["Azufre a pedir", fmt(X.azufre_tn_pedir, 1), "t", `${fmt(X.azufre_tn, 1)} t + ${fmt(100 * RG.superposicion)} % · media ${fmt(X.azufre_media)} kg/ha`, "key"],
+    ].map(([l, v, u, d, c]) => `<div class="kpi ${c}"><span class="eyebrow">${l}</span><span class="v">${v}<small>${u}</small></span><span class="d">${d}</span></div>`).join("");
+    return X;
+  }
   $("p-dl-todas").href = PR.zip_todas;
   $("p-fuente").textContent = `Fuente: ${RG.archivo}, hoja "${RG.hoja}" (modificada ${RG.modificado}).`;
 
@@ -733,9 +767,11 @@ function iniciarPresc() {
     <tr><td>Superficie</td><td>${fmt(p.ha, 1)} ha</td></tr>
     <tr><td>Urea</td><td>${fmt(p.urea)} kg/ha${p.pixel ? ` (media; pixeles ${fmt(p.urea_min)}–${fmt(p.urea_max)})` : ""}</td></tr>
     <tr><td>Azufre</td><td>${fmt(p.azufre)} kg/ha</td></tr></table></div>`;
+  const estiloP = f => sel.has(f.properties.Lote)
+    ? { color: "#1b211c", weight: 0.6, opacity: 1, fillColor: colP(f.properties[pVar], pVar), fillOpacity: (pVar === "urea" && f.properties.pixel) ? 0 : 1 }
+    : { color: css("--ink-3"), weight: 0.4, opacity: 0.5, fillColor: css("--surface-2"), fillOpacity: 0.85 };
   const ambs = L.geoJSON(PR.geo, {
-    style: f => ({ color: "#1b211c", weight: 0.6, fillColor: colP(f.properties[pVar], pVar),
-                   fillOpacity: (pVar === "urea" && f.properties.pixel) ? 0 : 1 }),
+    style: estiloP,
     onEachFeature: (f, l) => { l.bindPopup(popA(f.properties)); l.on("click", () => detalle(f.properties.Lote)); },
   }).addTo(map2);
   const bordes = L.geoJSON(D.lotes, { style: () => ({ color: "#111", weight: 1.6, fill: false }), interactive: false,
@@ -743,8 +779,7 @@ function iniciarPresc() {
   map2.fitBounds(ambs.getBounds(), { padding: [12, 12] });
   function vista() {
     $("p-seg").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === pVar));
-    ambs.setStyle(f => ({ color: "#1b211c", weight: 0.6, fillColor: colP(f.properties[pVar], pVar),
-                          fillOpacity: (pVar === "urea" && f.properties.pixel) ? 0 : 1 }));
+    ambs.setStyle(estiloP);
     if (pVar === "urea") png.addTo(map2); else map2.removeLayer(png);
     ambs.bringToFront(); bordes.bringToFront();
     const [a, b, pal, u] = escala[pVar];
@@ -760,7 +795,32 @@ function iniciarPresc() {
   tb2.innerHTML = PR.lotes.map(l => `<tr data-lote="${l.Lote}"><td>${l.Lote} ${l.tipo.startsWith("por pixel") ? '<span class="tag px">pixel</span>' : ""}</td>
     <td>${fmt(l.ha)}</td><td>${fmt(l.urea_media)}</td><td>${fmt(l.urea_tn_pedir, 1)}</td><td>${fmt(l.azufre_media)}</td><td>${fmt(l.azufre_tn_pedir, 1)}</td>
     <td style="text-align:left"><a class="dl" href="${l.archivo}" download onclick="event.stopPropagation()">zip</a></td></tr>`).join("");
-  $("p-lotes").querySelector("tfoot").innerHTML = `<tr><td>Total</td><td>${fmt(T.ha)}</td><td>${fmt(T.urea_media)}</td><td>${fmt(T.urea_tn_pedir, 1)}</td><td>${fmt(T.azufre_media)}</td><td>${fmt(T.azufre_tn_pedir, 1)}</td><td></td></tr>`;
+  function aplicarSeleccion(ajustar) {
+    const X = kpis();
+    tb2.querySelectorAll("tr").forEach(tr => tr.hidden = !sel.has(tr.dataset.lote));
+    $("p-lotes").querySelector("tfoot").innerHTML = `<tr><td>Total${X.n === PR.lotes.length ? "" : " selección"}</td><td>${fmt(X.ha)}</td><td>${fmt(X.urea_media)}</td><td>${fmt(X.urea_tn_pedir, 1)}</td><td>${fmt(X.azufre_media)}</td><td>${fmt(X.azufre_tn_pedir, 1)}</td><td></td></tr>`;
+    $("p-dd-txt").textContent = X.n === PR.lotes.length ? `todos (${X.n})` : X.n === 0 ? "ninguno" : X.n <= 3 ? elegidos().map(l => l.Lote).join(", ") : `${X.n} de ${PR.lotes.length}`;
+    $("p-dd-menu").querySelectorAll("input[value]").forEach(i => i.checked = sel.has(i.value));
+    ambs.setStyle(estiloP);
+    if (ajustar && X.n) {
+      const capas = ambs.getLayers().filter(x => sel.has(x.feature.properties.Lote));
+      map2.fitBounds(L.featureGroup(capas).getBounds(), { padding: [20, 20] });
+    }
+    const actual = tb2.querySelector("tr.sel");
+    if (X.n && (!actual || !sel.has(actual.dataset.lote))) detalle(elegidos()[0].Lote);
+  }
+  $("p-dd-menu").innerHTML = `<div class="dd-acc"><button type="button" data-a="todos">Todos</button><button type="button" data-a="ninguno">Ninguno</button></div>` +
+    PR.lotes.map(l => `<label><input type="checkbox" id="p-dd-${l.Lote}" value="${l.Lote}" checked>${l.Lote}${l.tipo.startsWith("por pixel") ? ' <span class="tag px">pixel</span>' : ""}<small>${fmt(l.ha)} ha</small></label>`).join("");
+  $("p-dd-menu").addEventListener("change", e => {
+    const i = e.target.closest("input[value]"); if (!i) return;
+    i.checked ? sel.add(i.value) : sel.delete(i.value); aplicarSeleccion(true);
+  });
+  $("p-dd-menu").addEventListener("click", e => {
+    const b = e.target.closest("button[data-a]"); if (!b) return;
+    if (b.dataset.a === "todos") PR.lotes.forEach(l => sel.add(l.Lote)); else sel.clear();
+    aplicarSeleccion(b.dataset.a === "todos");
+  });
+  document.addEventListener("click", e => { const dd = $("p-dd"); if (dd.open && !dd.contains(e.target)) dd.open = false; });
   tb2.addEventListener("click", e => { const tr = e.target.closest("tr"); if (tr) detalle(tr.dataset.lote, true); });
   $("p-nota-lotes").textContent = `Toneladas a pedir = dosis × superficie de cada ambiente (o pixel) + ${fmt(100 * RG.superposicion)} % por superposición. Las dosis de los archivos no incluyen ese 3 %.`;
 
@@ -779,11 +839,13 @@ function iniciarPresc() {
     if (zoom) { ambs.eachLayer(x => { if (x.feature.properties.Lote === lote) { } }); const b = L.featureGroup(ambs.getLayers().filter(x => x.feature.properties.Lote === lote)).getBounds(); map2.fitBounds(b, { padding: [30, 30] }); }
   }
   detalle(PR.lotes[0].Lote);
+  aplicarSeleccion(false);
 
   $("p-csv").addEventListener("click", () => {
     const enc = ["Lote", "tipo", "ha", "urea_kg_ha", "urea_t", "urea_t_pedir", "azufre_kg_ha", "azufre_t", "azufre_t_pedir"];
-    const filas = PR.lotes.map(l => [l.Lote, l.tipo, l.ha, l.urea_media, l.urea_tn, l.urea_tn_pedir, l.azufre_media, l.azufre_tn, l.azufre_tn_pedir]);
-    filas.push(["TOTAL", "", T.ha, T.urea_media, T.urea_tn, T.urea_tn_pedir, T.azufre_media, T.azufre_tn, T.azufre_tn_pedir]);
+    const ls = elegidos(), X = totales(ls), r1 = v => v == null ? "" : Math.round(v * 10) / 10;
+    const filas = ls.map(l => [l.Lote, l.tipo, l.ha, l.urea_media, l.urea_tn, l.urea_tn_pedir, l.azufre_media, l.azufre_tn, l.azufre_tn_pedir]);
+    filas.push(["TOTAL", "", r1(X.ha), r1(X.urea_media), r1(X.urea_tn), r1(X.urea_tn_pedir), r1(X.azufre_media), r1(X.azufre_tn), r1(X.azufre_tn_pedir)]);
     const txt = [enc, ...filas].map(r => r.join(";")).join("\n").replace(/\./g, ",");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + txt], { type: "text/csv;charset=utf-8" }));
     a.download = "toneladas_urea_azufre_por_lote.csv"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
