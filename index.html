@@ -686,7 +686,7 @@ function dibujar() {
     const lineas = Object.entries(CU.msv_propias || {}).map(([c, v]) => ({ x: v.x, y: v.y.map(y => y / 1000), col: colCamp(c), w: c === ACT ? 3 : 2 }));
     g = grafico({ pts, lineas, xl: `${M.indice} (Sentinel-2)`, yl: "MS de vicia (t/ha)", xd: 2, yd: 0, x0: Math.min(...CU.x_msv) - .02, x1: Math.max(...CU.x_msv) + .02, y0: 0, y1: Math.max(...pts.map(p => p.y), ...lineas.flatMap(l => l.y)) * 1.05 });
     ley = leyendaCamps(`<span><i style="background:var(--ink-3)"></i>curva exponencial de cada año (en el rango de sus muestras)</span>`, campsAll);
-    nota = `MS de vicia medida contra el índice, con una curva propia por campaña. Es la única vista donde entra ${campLbl("2526")}: esa campaña solo tiene MS de vicia (sin materia verde ni gramínea), por eso no aparece en las etapas 1 a 3. Para el mapa se usa el modelo por etapas; esta relación directa queda como referencia (ver "Comparación de modelos").`;
+    nota = "";
   } else {
     const a = MU.filter(d => d.Campania === ACT && d.MS_vic != null);
     const pts = a.map(d => ({ x: d.MS_vic / 1000, y: d.MS_vic_est / 1000, col: css("--s3"), act: true, d }));
